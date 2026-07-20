@@ -1,0 +1,87 @@
+name: myacc-agentcore-base-infra-vpc
+
+'on':
+  workflow_dispatch:
+    inputs:
+      TF_STAGE:
+        description: Terraform stage to run
+        required: true
+        type: choice
+        options:
+          - build
+          - deploy
+          - destroy
+        default: build
+      aws_region:
+        description: AWS region to deploy the VPC into
+        required: false
+        type: string
+        default: us-west-2
+      vpc_cidr:
+        description: CIDR block for the VPC
+        required: false
+        type: string
+        default: 10.10.0.0/16
+      project:
+        description: Name prefix applied to resource tags
+        required: false
+        type: string
+        default: base-infra
+
+permissions:
+  id-token: write # required to fetch the OIDC token for AWS role assumption
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: base-infra
+
+env:
+  TF_VAR_aws_region: ${{ github.event.inputs.aws_region }}
+  TF_VAR_vpc_cidr: ${{ github.event.inputs.vpc_cidr }}
+  TF_VAR_project: ${{ github.event.inputs.project }}
+
+jobs:
+  Base-Infra-VPC:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Bootstrap note: this role must already exist (created via a one-time
+      # local `terraform apply` with your own AWS credentials) before this
+      # workflow can run - see base-infra/README.md.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ github.event.inputs.aws_region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          # Avoid the wrapper injecting extra text into raw command stdout
+          # (breaks `terraform output -raw` style captures downstream).
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init
+
+      # ---------- build ----------
+      - name: Build stage execution (plan)
+        if: ${{ github.event.inputs.TF_STAGE == 'build' }}
+        run: |
+          terraform fmt -check -recursive
+          terraform validate
+          terraform plan
+
+      # ---------- deploy ----------
+      - name: Deploy stage execution (apply)
+        if: ${{ github.event.inputs.TF_STAGE == 'deploy' }}
+        run: terraform apply -auto-approve
+
+      # ---------- destroy ----------
+      - name: Destroy stage execution (destroy)
+        if: ${{ github.event.inputs.TF_STAGE == 'destroy' }}
+        run: terraform destroy -auto-approve
