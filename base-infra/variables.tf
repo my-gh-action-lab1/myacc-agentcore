@@ -5,7 +5,7 @@
 variable "aws_region" {
   description = "AWS region to deploy the base VPC into."
   type        = string
-  default     = "us-west-2"
+  default     = "eu-west-1"
 }
 
 variable "project" {
@@ -23,7 +23,7 @@ variable "vpc_cidr" {
 variable "availability_zones" {
   description = "Two AZs used for the public and private subnets."
   type        = list(string)
-  default     = ["us-west-2a", "us-west-2b"]
+  default     = ["eu-west-1a", "eu-west-12b"]
 }
 
 variable "public_subnet_cidr" {
