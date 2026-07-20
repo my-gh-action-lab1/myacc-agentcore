@@ -49,6 +49,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Debug OIDC Claims
+        uses: github/actions-oidc-debugger@main
+        with:
+          audience: 'sts.amazonaws.com'
+
       # Bootstrap note: this role must already exist (created via a one-time
       # local `terraform apply` with your own AWS credentials) before this
       # workflow can run - see base-infra/README.md.
