@@ -2,7 +2,7 @@ terraform {
   backend "s3" {
     bucket  = "dan-terraform-101"
     key     = "myacc-agentcore/base-infra/terraform.tfstate"
-    region  = "us-west-2"
+    region  = "eu-west-1"
     encrypt = true
   }
 }
