@@ -53,7 +53,7 @@ jobs:
       # local `terraform apply` with your own AWS credentials) before this
       # workflow can run - see base-infra/README.md.
       - name: Debug OIDC Claims
-        uses: github/actions-oidc-debugger@main
+        uses: github/actions-oidc-debugger@v1
         with:
           audience: 'sts.amazonaws.com'
       - name: Configure AWS credentials (OIDC)
