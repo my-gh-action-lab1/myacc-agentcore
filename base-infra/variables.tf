@@ -23,7 +23,7 @@ variable "vpc_cidr" {
 variable "availability_zones" {
   description = "Two AZs used for the public and private subnets."
   type        = list(string)
-  default     = ["eu-west-1a", "eu-west-12b"]
+  default     = ["eu-west-1a", "eu-west-2b"]
 }
 
 variable "public_subnet_cidr" {
