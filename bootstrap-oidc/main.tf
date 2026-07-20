@@ -55,10 +55,21 @@ data "aws_iam_policy_document" "github_oidc_trust" {
       values   = ["sts.amazonaws.com"]
     }
 
+    # GitHub repos created on/after 2026-07-15 emit the new "immutable subject
+    # claims" sub format (repo:OWNER@OWNER-ID/REPO@REPO-ID:ref:...) instead of
+    # the classic repo:OWNER/REPO:ref:... . Match both so this works whichever
+    # format the target repo actually uses. The @* wildcard for the numeric
+    # IDs is safe: GitHub cryptographically signs the token, so nothing can
+    # forge a sub claim for a different repo regardless of this wildcard.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = [for ref in var.github_oidc_allowed_refs : "repo:${var.github_org}/${var.github_repo}:${ref}"]
+      values = flatten([
+        for ref in var.github_oidc_allowed_refs : [
+          "repo:${var.github_org}/${var.github_repo}:${ref}",
+          "repo:${var.github_org}@*/${var.github_repo}@*:${ref}",
+        ]
+      ])
     }
   }
 }
