@@ -137,7 +137,7 @@ data "aws_iam_policy_document" "github_actions_permissions" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = [var.state_key_prefix]
+      values   = var.state_key_prefixes
     }
   }
 
@@ -148,7 +148,89 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       "s3:GetObject",
       "s3:PutObject",
     ]
-    resources = ["arn:aws:s3:::${var.state_bucket}/${var.state_key_prefix}"]
+    resources = [for p in var.state_key_prefixes : "arn:aws:s3:::${var.state_bucket}/${p}"]
+  }
+
+  # ECR: watchy's workflow creates the repo and pushes the agent image.
+  statement {
+    sid    = "EcrManage"
+    effect = "Allow"
+    actions = [
+      "ecr:CreateRepository",
+      "ecr:DeleteRepository",
+      "ecr:DescribeRepositories",
+      "ecr:DescribeImages",
+      "ecr:BatchDeleteImage",
+      "ecr:SetRepositoryPolicy",
+      "ecr:DeleteRepositoryPolicy",
+      "ecr:PutLifecyclePolicy",
+      "ecr:TagResource",
+      "ecr:ListTagsForResource",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "EcrPush"
+    effect = "Allow"
+    actions = [
+      "ecr:GetAuthorizationToken",
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer",
+      "ecr:InitiateLayerUpload",
+      "ecr:UploadLayerPart",
+      "ecr:CompleteLayerUpload",
+      "ecr:PutImage",
+    ]
+    resources = ["*"]
+  }
+
+  # SNS: agent-infra creates the notifications topic + email subscription.
+  statement {
+    sid    = "SnsManage"
+    effect = "Allow"
+    actions = [
+      "sns:CreateTopic",
+      "sns:DeleteTopic",
+      "sns:GetTopicAttributes",
+      "sns:SetTopicAttributes",
+      "sns:Subscribe",
+      "sns:Unsubscribe",
+      "sns:ListSubscriptionsByTopic",
+      "sns:TagResource",
+      "sns:UntagResource",
+      "sns:ListTagsForResource",
+    ]
+    resources = ["*"]
+  }
+
+  # Bedrock AgentCore: create/update/delete the runtime resource itself.
+  statement {
+    sid       = "BedrockAgentCoreManage"
+    effect    = "Allow"
+    actions   = ["bedrock-agentcore:*"]
+    resources = ["*"]
+  }
+
+  # IAM: watchy's Terraform creates its own runtime execution role and
+  # passes it to the bedrock-agentcore.amazonaws.com service. Scoped to a
+  # role name prefix so this can't touch unrelated roles in the account.
+  statement {
+    sid    = "RuntimeExecutionRole"
+    effect = "Allow"
+    actions = [
+      "iam:CreateRole",
+      "iam:DeleteRole",
+      "iam:GetRole",
+      "iam:PutRolePolicy",
+      "iam:GetRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:PassRole",
+    ]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.runtime_role_name_prefix}"]
   }
 }
 

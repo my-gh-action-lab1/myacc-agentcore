@@ -1,0 +1,109 @@
+name: myacc-agentcore-watchy-agent
+
+'on':
+  workflow_dispatch:
+    inputs:
+      TF_STAGE:
+        description: Terraform stage to run
+        required: true
+        type: choice
+        options:
+          - build
+          - deploy
+          - destroy
+        default: build
+      vpc_id:
+        description: VPC id to place the AgentCore runtime in (its private subnet, tagged Tier=private, is auto-discovered)
+        required: true
+        type: string
+      aws_region:
+        description: AWS region to deploy into
+        required: false
+        type: string
+        default: eu-west-1
+
+permissions:
+  id-token: write # required to fetch the OIDC token for AWS role assumption
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: watchy
+
+env:
+  TF_VAR_aws_region: ${{ github.event.inputs.aws_region }}
+  TF_VAR_vpc_id: ${{ github.event.inputs.vpc_id }}
+
+jobs:
+  Watchy-Agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ github.event.inputs.aws_region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Set image tag (git SHA)
+        run: echo "TF_VAR_image_tag=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Terraform Init
+        run: terraform init
+
+      # ---------- build ----------
+      - name: Build stage execution (plan)
+        if: ${{ github.event.inputs.TF_STAGE == 'build' }}
+        run: |
+          terraform fmt -check -recursive
+          terraform validate
+          terraform plan
+
+      # ---------- deploy ----------
+      # 1) create the ECR repo first, 2) build+push the arm64 image, 3) apply the rest.
+      - name: Deploy - create ECR repository
+        if: ${{ github.event.inputs.TF_STAGE == 'deploy' }}
+        run: terraform apply -auto-approve -target=aws_ecr_repository.watchy_agent
+
+      - name: Set up QEMU
+        if: ${{ github.event.inputs.TF_STAGE == 'deploy' }}
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: ${{ github.event.inputs.TF_STAGE == 'deploy' }}
+        uses: docker/setup-buildx-action@v3
+
+      - name: Deploy - build and push agent image (arm64)
+        if: ${{ github.event.inputs.TF_STAGE == 'deploy' }}
+        run: |
+          REPO_URL=$(terraform output -raw ecr_repository_url)
+          REGISTRY=${REPO_URL%%/*}
+          REGION=$(echo "$REGISTRY" | cut -d. -f4)
+
+          if [[ ! "$REGISTRY" =~ ^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com$ ]]; then
+            echo "::error::Unexpected ECR registry value parsed: '$REGISTRY' (from REPO_URL='$REPO_URL')"
+            exit 1
+          fi
+
+          aws ecr get-login-password --region "$REGION" \
+            | docker login --username AWS --password-stdin "$REGISTRY"
+          docker buildx build --platform linux/arm64 \
+            -t "$REPO_URL:${GITHUB_SHA::7}" -t "$REPO_URL:latest" \
+            --push ./agent
+
+      - name: Deploy - apply agent runtime
+        if: ${{ github.event.inputs.TF_STAGE == 'deploy' }}
+        run: terraform apply -auto-approve
+
+      # ---------- destroy ----------
+      - name: Destroy stage execution (destroy)
+        if: ${{ github.event.inputs.TF_STAGE == 'destroy' }}
+        run: terraform destroy -auto-approve

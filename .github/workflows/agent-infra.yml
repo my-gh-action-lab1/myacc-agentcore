@@ -1,0 +1,75 @@
+name: myacc-agentcore-agent-infra
+
+'on':
+  workflow_dispatch:
+    inputs:
+      TF_STAGE:
+        description: Terraform stage to run
+        required: true
+        type: choice
+        options:
+          - build
+          - deploy
+          - destroy
+        default: build
+      notification_email:
+        description: Email address that receives watchy's notifications
+        required: true
+        type: string
+      aws_region:
+        description: AWS region to deploy into
+        required: false
+        type: string
+        default: eu-west-1
+
+permissions:
+  id-token: write # required to fetch the OIDC token for AWS role assumption
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+    working-directory: agent-infra
+
+env:
+  TF_VAR_aws_region: ${{ github.event.inputs.aws_region }}
+  TF_VAR_notification_email: ${{ github.event.inputs.notification_email }}
+
+jobs:
+  Agent-Infra:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ github.event.inputs.aws_region }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init
+
+      # ---------- build ----------
+      - name: Build stage execution (plan)
+        if: ${{ github.event.inputs.TF_STAGE == 'build' }}
+        run: |
+          terraform fmt -check -recursive
+          terraform validate
+          terraform plan
+
+      # ---------- deploy ----------
+      - name: Deploy stage execution (apply)
+        if: ${{ github.event.inputs.TF_STAGE == 'deploy' }}
+        run: terraform apply -auto-approve
+
+      # ---------- destroy ----------
+      - name: Destroy stage execution (destroy)
+        if: ${{ github.event.inputs.TF_STAGE == 'destroy' }}
+        run: terraform destroy -auto-approve

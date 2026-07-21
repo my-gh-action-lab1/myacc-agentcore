@@ -45,13 +45,23 @@ variable "oidc_role_name" {
 }
 
 variable "state_bucket" {
-  description = "S3 bucket holding the base-infra Terraform state (for scoping backend read/write permissions)."
+  description = "S3 bucket holding this repo's Terraform state (for scoping backend read/write permissions)."
   type        = string
-  default     = "dan-terraform-01"
+  default     = "dan-terraform-101"
 }
 
-variable "state_key_prefix" {
-  description = "Key prefix within state_bucket that the deploy role may read/write."
+variable "state_key_prefixes" {
+  description = "Key prefixes within state_bucket that the deploy role may read/write - one per Terraform folder in this repo."
+  type        = list(string)
+  default = [
+    "myacc-agentcore/base-infra/*",
+    "myacc-agentcore/agent-infra/*",
+    "myacc-agentcore/watchy/*",
+  ]
+}
+
+variable "runtime_role_name_prefix" {
+  description = "IAM role name prefix the deploy role is allowed to create/manage/pass (e.g. the AgentCore runtime's own execution role)."
   type        = string
-  default     = "myacc-agentcore/base-infra/*"
+  default     = "myacc-watchy-*"
 }
